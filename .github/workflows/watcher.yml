@@ -15,10 +15,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: bike-discount-watcher
-  cancel-in-progress: false
-
 jobs:
   watch:
     runs-on: ubuntu-latest
