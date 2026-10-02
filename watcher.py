@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from bike_discount import DEFAULT_LISTING_URL, ListingParseError, fetch_all_products
 from state import canonical_state, compare_catalogue, load_state, save_state, utc_now
-from telegram_notifier import deliver_events
+from telegram_notifier import TelegramError, deliver_events, send_test_message
 
 ROOT = Path(__file__).resolve().parent
 logger = logging.getLogger("watcher")
@@ -20,8 +21,41 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def main() -> int:
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Watch a Bike-Discount listing and notify Telegram when it changes."
+    )
+    parser.add_argument(
+        "--test-telegram",
+        action="store_true",
+        help="Send one Telegram test message without scraping or changing product state.",
+    )
+    return parser.parse_args(argv)
+
+
+def _send_test_telegram() -> int:
+    try:
+        send_test_message(
+            os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() or None,
+            os.environ.get("TELEGRAM_CHAT_ID", "").strip() or None,
+            dry_run=_env_flag("DRY_RUN"),
+        )
+    except TelegramError as exc:
+        logger.error("Telegram test message failed: %s", exc)
+        return 1
+    if _env_flag("DRY_RUN"):
+        return 0
+    logger.info("Telegram test message sent.")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    if argv is None:
+        argv = sys.argv[1:] if __name__ == "__main__" else []
+    if _parse_args(argv).test_telegram:
+        return _send_test_telegram()
+
     dry_run = _env_flag("DRY_RUN")
     state_path = Path(os.environ.get("STATE_PATH", ROOT / "data" / "products.json"))
     listing_url = os.environ.get("LISTING_URL", DEFAULT_LISTING_URL).strip()

@@ -12,6 +12,11 @@ from state import Event
 logger = logging.getLogger("telegram_notifier")
 
 API_URL = "https://api.telegram.org/bot{token}/sendMessage"
+TEST_MESSAGE = (
+    "✅ BikePartsWatcher test successful\n"
+    "\n"
+    "GitHub Actions can send Telegram notifications."
+)
 
 
 class TelegramError(RuntimeError):
@@ -84,6 +89,20 @@ def deliver_events(
             failures,
         )
     return failures
+
+
+def send_test_message(token: str | None, chat_id: str | None, dry_run: bool = False) -> None:
+    """Send one fixed message so a manual run can prove Telegram delivery."""
+    if dry_run:
+        print(TEST_MESSAGE)
+        print()
+        logger.info("DRY_RUN is enabled. Printed the Telegram test message; Telegram was not called.")
+        return
+    if not token or not chat_id:
+        raise TelegramError(
+            "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required to send the test message."
+        )
+    send_telegram(TEST_MESSAGE, token, chat_id)
 
 
 def send_telegram(text: str, token: str, chat_id: str, session: requests.Session | None = None) -> None:

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from bike_discount import discount_percent
 from state import Event, Product, canonical_state, compare_catalogue, load_state, save_state
-from telegram_notifier import TelegramError, format_event
+from telegram_notifier import TEST_MESSAGE, TelegramError, format_event
 import telegram_notifier
 import watcher
 
@@ -273,4 +273,52 @@ def test_scrape_failure_does_not_touch_state(tmp_path, monkeypatch):
 
     monkeypatch.setattr(watcher, "fetch_all_products", fail)
     assert watcher.main() == 1
+    assert state_path.read_text(encoding="utf-8") == before
+
+
+def test_test_telegram_sends_one_message_and_leaves_state_untouched(tmp_path, monkeypatch, capsys):
+    state_path = tmp_path / "products.json"
+    save_state(state_path, compare_catalogue(None, [product()], NOW).state)
+    before = state_path.read_text(encoding="utf-8")
+    monkeypatch.setenv("STATE_PATH", str(state_path))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
+    monkeypatch.delenv("DRY_RUN", raising=False)
+    sent = []
+
+    def capture(text, token, chat_id, session=None):
+        sent.append((text, token, chat_id))
+
+    def scrape(*_args, **_kwargs):
+        raise AssertionError("the catalogue must not be scraped")
+
+    monkeypatch.setattr("telegram_notifier.send_telegram", capture)
+    monkeypatch.setattr(watcher, "fetch_all_products", scrape)
+    monkeypatch.setattr(watcher, "save_state", scrape)
+
+    assert watcher.main(["--test-telegram"]) == 0
+    assert sent == [(TEST_MESSAGE, "token", "123")]
+    assert TEST_MESSAGE == (
+        "✅ BikePartsWatcher test successful\n"
+        "\n"
+        "GitHub Actions can send Telegram notifications."
+    )
+    assert state_path.read_text(encoding="utf-8") == before
+    assert capsys.readouterr().out == ""
+
+
+def test_test_telegram_failure_does_not_touch_state(tmp_path, monkeypatch):
+    state_path = tmp_path / "products.json"
+    save_state(state_path, compare_catalogue(None, [product()], NOW).state)
+    before = state_path.read_text(encoding="utf-8")
+    monkeypatch.setenv("STATE_PATH", str(state_path))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
+    monkeypatch.delenv("DRY_RUN", raising=False)
+
+    def explode(*_args, **_kwargs):
+        raise TelegramError("chat not found")
+
+    monkeypatch.setattr("telegram_notifier.send_telegram", explode)
+    assert watcher.main(["--test-telegram"]) == 1
     assert state_path.read_text(encoding="utf-8") == before

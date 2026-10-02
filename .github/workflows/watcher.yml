@@ -4,6 +4,11 @@ name: Watch Bike-Discount
 # products.json commit below cannot start another run.
 on:
   workflow_dispatch:
+    inputs:
+      send_test_message:
+        description: Send one Telegram test message and skip the catalogue scrape
+        type: boolean
+        default: false
   schedule:
     - cron: "3,13,23,33,43,53 * * * *"
 
@@ -30,14 +35,22 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Send Telegram test message
+        if: github.event_name == 'workflow_dispatch' && inputs.send_test_message == true
+        run: python watcher.py --test-telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
       - name: Run watcher
+        if: github.event_name != 'workflow_dispatch' || inputs.send_test_message != true
         run: python watcher.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Commit product state when it changed
-        if: always()
+        if: always() && (github.event_name != 'workflow_dispatch' || inputs.send_test_message != true)
         run: |
           if [ ! -f data/products.json ]; then
             echo "No product state file to commit"

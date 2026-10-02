@@ -44,6 +44,8 @@ pytest
 
 The workflow does not run on push, so the state commit cannot start another run.
 
+To check Telegram without scraping, open Actions, choose Watch Bike-Discount, and run the workflow manually with **Send one Telegram test message and skip the catalogue scrape** enabled. That runs `python watcher.py --test-telegram` and does not change `data/products.json`.
+
 Create these repository secrets:
 
 | Secret | Value |
