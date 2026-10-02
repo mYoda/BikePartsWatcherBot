@@ -72,7 +72,7 @@ Leaving the filtered result set marks a product `out_of_stock` without a message
 
 If a Telegram send fails, the run exits non-zero and does not save the new state. The next run detects the same events and tries again. `DRY_RUN=true` still saves state after printing the messages.
 
-Scheduled GitHub Actions runs also send one catalogue digest per hour. The interval is `DIGEST_INTERVAL_HOURS` in `state.py` (set it to `6` for every six hours). The watcher still runs on its 10-minute schedule; `last_digest_at` stops a second digest inside that interval. A failed digest is not recorded, so the next scheduled run tries again. Manual runs and `--test-telegram` do not send the digest.
+Every normal watcher run also sends one Telegram message with the current top 3 discounted products, including on a manual run that does not use the test-message option. `--test-telegram` still sends only the fixed test message. A failed top-deals send fails the run and does not save product state.
 
 ## Assumptions
 

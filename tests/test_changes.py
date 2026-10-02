@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from bike_discount import discount_percent
 from state import Event, Product, canonical_state, compare_catalogue, digest_is_due, load_state, save_state
-from telegram_notifier import TEST_MESSAGE, TelegramError, format_digest, format_event
+from telegram_notifier import TEST_MESSAGE, TelegramError, format_digest, format_event, format_top_deals
 import telegram_notifier
 import watcher
 
@@ -255,7 +255,7 @@ def test_next_run_after_telegram_failure_detects_the_event_again(tmp_path, monke
     assert watcher.main() == 0
     saved = json.loads(state_path.read_text(encoding="utf-8"))
     assert "prod-new" in saved["products"]
-    assert attempts["count"] == 2
+    assert attempts["count"] == 4
 
 
 def test_scrape_failure_does_not_touch_state(tmp_path, monkeypatch):
@@ -388,9 +388,34 @@ def _schedule_digest(tmp_path, monkeypatch, last_digest_at: str | None, now: dat
     return state_path
 
 
-def test_digest_sent_when_due(tmp_path, monkeypatch):
+def test_top_deals_message_lists_current_discounts():
+    text = format_top_deals(
+        [
+            {
+                "name": item.name,
+                "price": item.price,
+                "rrp": item.rrp,
+                "discount_percent": item.discount_percent,
+                "url": item.url,
+            }
+            for item in digest_catalogue()
+        ]
+    )
+    assert text.startswith("🔥 Bike-Discount top deals\n")
+    assert text.index("1. RockShox ZEB Ultimate") < text.index("2. Second Fork") < text.index("3. Mid Fork")
+    assert "€549.99 / RRP €1,149.00" in text
+    assert "-52%" in text
+    assert "https://example.test/best" in text
+    assert "Low Fork" not in text
+    assert "No RRP Fork" not in text
+    assert "BikePartsWatcher alive" not in text
+
+
+def test_every_normal_run_sends_one_top_deals_message(tmp_path, monkeypatch):
     noon = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
-    state_path = _schedule_digest(tmp_path, monkeypatch, "2026-10-02T10:00:00Z", noon)
+    state_path = _schedule_digest(tmp_path, monkeypatch, "2026-10-02T11:20:00Z", noon)
+    before = state_path.read_text(encoding="utf-8")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     sent = []
 
     def capture(text, token, chat_id, session=None):
@@ -398,42 +423,40 @@ def test_digest_sent_when_due(tmp_path, monkeypatch):
 
     monkeypatch.setattr("telegram_notifier.send_telegram", capture)
     assert watcher.main() == 0
-    assert len(sent) == 1
-    assert sent[0].startswith("✅ BikePartsWatcher alive")
-    assert "1. RockShox ZEB Ultimate" in sent[0]
-    saved = json.loads(state_path.read_text(encoding="utf-8"))
-    assert saved["last_digest_at"] == "2026-10-02T12:00:00Z"
-
-
-def test_digest_not_sent_again_within_the_same_hour(tmp_path, monkeypatch, caplog):
-    caplog.set_level(logging.INFO)
-    noon = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
-    state_path = _schedule_digest(tmp_path, monkeypatch, "2026-10-02T11:20:00Z", noon)
-    before = state_path.read_text(encoding="utf-8")
-
-    def explode(*_args, **_kwargs):
-        raise AssertionError("digest must not be sent inside the same hour")
-
-    monkeypatch.setattr("telegram_notifier.send_telegram", explode)
-    assert watcher.main() == 0
-    assert "Digest not due" in caplog.text
+    assert sent == [
+        format_top_deals(
+            [
+                {
+                    "name": item.name,
+                    "price": item.price,
+                    "rrp": item.rrp,
+                    "discount_percent": item.discount_percent,
+                    "url": item.url,
+                }
+                for item in digest_catalogue()
+            ]
+        )
+    ]
     assert state_path.read_text(encoding="utf-8") == before
 
 
-def test_failed_digest_is_retried_on_the_next_run(tmp_path, monkeypatch):
+def test_failed_top_deals_message_fails_the_run_and_retries(tmp_path, monkeypatch):
     noon = datetime(2026, 10, 2, 12, 0, tzinfo=timezone.utc)
     state_path = _schedule_digest(tmp_path, monkeypatch, "2026-10-02T10:00:00Z", noon)
+    before = state_path.read_text(encoding="utf-8")
     attempts = {"count": 0}
 
-    def fail_once(*_args, **_kwargs):
+    def fail_once(text, token, chat_id, session=None):
         attempts["count"] += 1
         if attempts["count"] == 1:
             raise TelegramError("temporary network error")
+        attempts["text"] = text
 
     monkeypatch.setattr("telegram_notifier.send_telegram", fail_once)
     assert watcher.main() == 1
-    assert json.loads(state_path.read_text(encoding="utf-8"))["last_digest_at"] == "2026-10-02T10:00:00Z"
+    assert state_path.read_text(encoding="utf-8") == before
 
     assert watcher.main() == 0
-    assert json.loads(state_path.read_text(encoding="utf-8"))["last_digest_at"] == "2026-10-02T12:00:00Z"
     assert attempts["count"] == 2
+    assert attempts["text"].startswith("🔥 Bike-Discount top deals")
+    assert "1. RockShox ZEB Ultimate" in attempts["text"]

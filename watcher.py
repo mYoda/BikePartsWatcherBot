@@ -10,16 +10,8 @@ import sys
 from pathlib import Path
 
 from bike_discount import DEFAULT_LISTING_URL, ListingParseError, fetch_all_products
-from state import (
-    canonical_state,
-    compare_catalogue,
-    digest_is_due,
-    isoformat,
-    load_state,
-    save_state,
-    utc_now,
-)
-from telegram_notifier import TelegramError, deliver_digest, deliver_events, send_test_message
+from state import canonical_state, compare_catalogue, load_state, save_state, utc_now
+from telegram_notifier import TelegramError, deliver_events, deliver_top_deals, send_test_message
 
 ROOT = Path(__file__).resolve().parent
 logger = logging.getLogger("watcher")
@@ -27,10 +19,6 @@ logger = logging.getLogger("watcher")
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _is_scheduled_run() -> bool:
-    return os.environ.get("GITHUB_EVENT_NAME", "").strip() == "schedule"
 
 
 def _digest_products(products) -> list[dict]:
@@ -128,24 +116,22 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=dry_run,
         )
     elif dry_run and not result.baseline:
-        logger.info("DRY_RUN is enabled. No notifications to send.")
+        logger.info("DRY_RUN is enabled. No catalogue-change notifications to send.")
 
-    if _is_scheduled_run() and digest_is_due(result.state.get("last_digest_at"), now):
-        try:
-            deliver_digest(
-                _digest_products(products),
-                os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() or None,
-                os.environ.get("TELEGRAM_CHAT_ID", "").strip() or None,
-                dry_run=dry_run,
-            )
-        except TelegramError as exc:
-            failures += 1
-            logger.error("Hourly digest failed: %s", exc)
-        else:
-            result.state["last_digest_at"] = isoformat(now)
-            logger.info("Digest sent")
-    elif _is_scheduled_run():
-        logger.info("Digest not due")
+    # Temporary: every normal run reports the current top deals, not only hourly.
+    try:
+        deliver_top_deals(
+            _digest_products(products),
+            os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() or None,
+            os.environ.get("TELEGRAM_CHAT_ID", "").strip() or None,
+            dry_run=dry_run,
+        )
+    except TelegramError as exc:
+        failures += 1
+        logger.error("Top deals message failed: %s", exc)
+    else:
+        if not dry_run:
+            logger.info("Top deals sent")
 
     if failures:
         logger.error(

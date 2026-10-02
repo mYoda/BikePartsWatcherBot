@@ -121,6 +121,46 @@ def format_digest(products: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def format_top_deals(products: list[dict]) -> str:
+    """One message with the current largest discounts, whether or not they are new."""
+    ranked = [product for product in products if product.get("discount_percent") is not None]
+    ranked.sort(key=lambda product: (-float(product["discount_percent"]), str(product.get("name") or "")))
+    lines = ["🔥 Bike-Discount top deals", ""]
+    for index, product in enumerate(ranked[:3], start=1):
+        price = format_eur(product["price"])
+        if product.get("rrp") is None:
+            price_line = price
+        else:
+            price_line = f"{price} / RRP {format_eur(product['rrp'])}"
+        lines.extend(
+            [
+                f"{index}. {product.get('name') or ''}",
+                price_line,
+                f"-{int(round(float(product['discount_percent'])))}%",
+                product.get("url") or "",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip()
+
+
+def deliver_top_deals(
+    products: list[dict],
+    token: str | None,
+    chat_id: str | None,
+    dry_run: bool,
+) -> None:
+    text = format_top_deals(products)
+    if dry_run:
+        print(text)
+        print()
+        logger.info("DRY_RUN is enabled. Printed the top deals; Telegram was not called.")
+        return
+    if not token or not chat_id:
+        raise TelegramError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required to send the top deals.")
+    send_telegram(text, token, chat_id)
+
+
 def deliver_digest(
     products: list[dict],
     token: str | None,
