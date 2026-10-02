@@ -72,6 +72,8 @@ Leaving the filtered result set marks a product `out_of_stock` without a message
 
 If a Telegram send fails, the run exits non-zero and does not save the new state. The next run detects the same events and tries again. `DRY_RUN=true` still saves state after printing the messages.
 
+Scheduled GitHub Actions runs also send one catalogue digest per hour. The interval is `DIGEST_INTERVAL_HOURS` in `state.py` (set it to `6` for every six hours). The watcher still runs on its 10-minute schedule; `last_digest_at` stops a second digest inside that interval. A failed digest is not recorded, so the next scheduled run tries again. Manual runs and `--test-telegram` do not send the digest.
+
 ## Assumptions
 
 The page is a Shopware 6 listing. Each card is `div.card.product-box` and carries `data-product-information` with `id`, `name`, `brand`, `price`, and `sku`. The id is the stable key. The current price comes from that JSON. RRP comes from `.list-price-price` (`1.015,00 €` means 1015.00). Discount is `(RRP - price) / RRP`. The on-page discount badge only contains a `%` character, so the percentage is calculated.

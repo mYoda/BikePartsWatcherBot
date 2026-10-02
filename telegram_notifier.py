@@ -91,6 +91,53 @@ def deliver_events(
     return failures
 
 
+def format_digest(products: list[dict]) -> str:
+    """Hourly summary of the current catalogue and its three largest discounts."""
+    ranked = [product for product in products if product.get("discount_percent") is not None]
+    ranked.sort(key=lambda product: (-float(product["discount_percent"]), str(product.get("name") or "")))
+    lines = [
+        "✅ BikePartsWatcher alive",
+        "",
+        "Bike-Discount checked successfully",
+        f"{len(products)} products currently available",
+        "",
+        "🔥 Top deals now:",
+    ]
+    for index, product in enumerate(ranked[:3], start=1):
+        price = format_eur(product["price"])
+        if product.get("rrp") is None:
+            price_line = price
+        else:
+            price_line = f"{price} / RRP {format_eur(product['rrp'])}"
+        lines.extend(
+            [
+                "",
+                f"{index}. {product.get('name') or ''}",
+                price_line,
+                f"🔥 -{int(round(float(product['discount_percent'])))}%",
+                product.get("url") or "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def deliver_digest(
+    products: list[dict],
+    token: str | None,
+    chat_id: str | None,
+    dry_run: bool,
+) -> None:
+    text = format_digest(products)
+    if dry_run:
+        print(text)
+        print()
+        logger.info("DRY_RUN is enabled. Printed the digest; Telegram was not called.")
+        return
+    if not token or not chat_id:
+        raise TelegramError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required to send the digest.")
+    send_telegram(text, token, chat_id)
+
+
 def send_test_message(token: str | None, chat_id: str | None, dry_run: bool = False) -> None:
     """Send one fixed message so a manual run can prove Telegram delivery."""
     if dry_run:

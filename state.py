@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HOT_DEAL_PERCENT = 40.0
+# Change this to 6 to send the digest once every six hours.
+DIGEST_INTERVAL_HOURS = 1
 
 
 @dataclass
@@ -76,8 +78,19 @@ def load_state(path: Path) -> dict | None:
 
 
 def canonical_state(state: dict) -> str:
-    ordered = {"products": {key: state["products"][key] for key in sorted(state["products"])}}
-    return json.dumps(ordered, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    payload = {"products": {key: state["products"][key] for key in sorted(state["products"])}}
+    if state.get("last_digest_at"):
+        payload["last_digest_at"] = state["last_digest_at"]
+    return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+
+
+def digest_is_due(last_digest_at: str | None, now: datetime) -> bool:
+    if not last_digest_at:
+        return True
+    sent_at = datetime.fromisoformat(str(last_digest_at).replace("Z", "+00:00"))
+    if sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=timezone.utc)
+    return now - sent_at >= timedelta(hours=DIGEST_INTERVAL_HOURS)
 
 
 def save_state(path: Path, state: dict) -> None:
