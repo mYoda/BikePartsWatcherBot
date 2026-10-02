@@ -9,8 +9,8 @@ on:
         description: Send one Telegram test message and skip the catalogue scrape
         type: boolean
         default: false
-  schedule:
-    - cron: "7,17,27,37,47,57 * * * *"
+    schedule:
+      - cron: "*/10 * * * *"
 
 permissions:
   contents: write
